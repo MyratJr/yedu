@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package chat;
+
+option go_package = "./chatpb";
+
+service ChatService {
+  rpc Chat(stream ChatRequest) returns (stream ChatResponse);
+  rpc ProvideLocation(LocationPayload) returns (LocationAck);
+}
+
+// ── Requests ─────────────────────────────────────────────────
+message ChatRequest {
+  string session_id = 1;
+  string user_id    = 2;
+  oneof input {
+    string text_input  = 3;
+    bytes  audio_input = 4;
+    bytes  image_input = 5;
+  }
+  string language = 6;  // "en" | "ar"
+}
+
+message LocationPayload {
+  string session_id = 1;
+  double latitude   = 2;
+  double longitude  = 3;
+}
+
+message LocationAck {
+  bool success = 1;
+}
+
+// ── Responses ────────────────────────────────────────────────
+message ChatResponse {
+  oneof payload {
+    TextChunk     text_chunk  = 1;
+    OrderDraftMsg order_draft = 2;
+    ActionRequest action      = 3;
+    ErrorInfo     error       = 4;
+  }
+}
+
+message TextChunk {
+  string text     = 1;
+  bool   is_final = 2;
+}
+
+message OrderDraftMsg {
+  string pickup_address      = 1;
+  double pickup_lat          = 2;
+  double pickup_lng          = 3;
+  string destination_address = 4;
+  double destination_lat     = 5;
+  double destination_lng     = 6;
+  repeated StopMsg stops     = 7;
+  string ride_type           = 8;  // "standard" | "premium" | "xl"
+  string notes               = 9;
+}
+
+message StopMsg {
+  string address = 1;
+  double lat     = 2;
+  double lng     = 3;
+}
+
+message ActionRequest {
+  enum ActionType {
+    UNKNOWN       = 0;
+    REQUEST_GPS   = 1;
+    CONFIRM_ORDER = 2;
+  }
+  ActionType type    = 1;
+  string     payload = 2;
+}
+
+message ErrorInfo {
+  string code    = 1;
+  string message = 2;
+}
