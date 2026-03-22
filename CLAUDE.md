@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-**Yedu AI Service** — a Python 3.11+ FastAPI microservice that adds natural-language ride booking to the Yedu taxi platform. It sits between the Go backend and LLM providers, processing text/voice/image input and returning structured ride orders via streaming responses.
-
-> The repository currently contains only a specification README. All code must be created following the architecture described here and in README.md.
+**Yedu AI Service** — a Python 3.11+ FastAPI microservice that adds natural-language ride booking to the Yedu taxi platform. It sits between the Go backend and LLM providers, processing text/voice/image input and returning structured ride orders via gRPC streaming.
 
 ---
 
@@ -36,7 +34,7 @@ pytest tests/test_router.py -v
 pytest tests/test_router.py::test_function_name -v
 
 # Regenerate protobuf Python stubs from chat.proto
-bash scripts/generate_proto.sh
+bash scripts/generate_stubs.sh
 # Or manually:
 python -m grpc_tools.protoc -I app/proto --python_out=app/proto --grpc_python_out=app/proto app/proto/chat.proto
 
@@ -50,18 +48,21 @@ docker compose -f docker/docker-compose.yml up
 
 ```
 KMP Mobile App
-      │  REST + SSE (multipart up, SSE down)
+      │  REST + SSE
       ▼
 Go Backend  (auth, orders, driver dispatch)
-      │  gRPC bidirectional streaming
+      │  gRPC bidirectional streaming  :50051
       ▼
-Python AI Service  ← this repo
+Yedu AI Service  ← this repo
+  ├── Input Router  (text / voice / image)
   ├── Whisper STT
-  ├── Input Router & Tools
-  └── LiteLLM Proxy (port 4000, key rotation)
-      │  HTTPS
-      ▼
-OpenAI │ Claude │ Gemini │ Ollama
+  ├── LLM Client  (tool-calling loop)
+  │     └── Tools: Places Search, Geocoding, GPS Request
+  ├── Session Manager  (Redis)
+  └── LiteLLM Proxy  :4000  (key rotation, multi-provider)
+        │  HTTPS
+        ▼
+  Gemini │ Claude │ GPT-4 │ Ollama
 ```
 
 **Communication protocols:**
@@ -76,58 +77,75 @@ OpenAI │ Claude │ Gemini │ Ollama
 
 ```
 app/
-├── main.py              # FastAPI entry point; starts gRPC server alongside HTTP
-├── config.py            # Pydantic Settings (reads from .env)
-├── api/                 # HTTP health + debug endpoints
-├── grpc_server/
-│   ├── server.py        # gRPC server bootstrap
-│   └── chat_servicer.py # Implements Chat() and ProvideLocation() RPCs
-├── proto/               # chat.proto + generated chat_pb2.py / chat_pb2_grpc.py
+├── main.py                  # FastAPI entry point; starts gRPC + HTTP in same process
+├── api/
+│   └── routes.py            # Health, readiness, and debug HTTP endpoints
 ├── core/
-│   ├── router.py        # Detects input type (text/voice/image) and dispatches
-│   ├── llm_client.py    # LiteLLM wrapper; handles streaming + provider fallback
-│   ├── prompt_builder.py# Assembles system prompt (English/Arabic) + conversation history
-│   ├── response_parser.py # Parses LLM output → OrderDraft Pydantic model
-│   └── stream_handler.py  # Formats gRPC stream chunks (text, order_draft, action, error)
-├── tools/
-│   ├── places_search.py # Google Places API lookup
-│   ├── geocode.py       # Forward/reverse geocoding
-│   └── device_location.py # Emits ActionRequest(REQUEST_GPS) to client
+│   ├── config.py            # Pydantic Settings — reads from .env
+│   ├── router.py            # Orchestrates input → LLM → order draft pipeline
+│   ├── llm_client.py        # LiteLLM wrapper; tool-calling loop; multi-model fallback
+│   ├── prompt_builder.py    # Builds system prompt + history messages (EN/AR)
+│   ├── response_parser.py   # Extracts OrderDraft from <order_draft>...</order_draft> tags
+│   └── stream_handler.py    # Converts events → gRPC ChatResponse messages
+├── grpc_server/
+│   ├── server.py            # gRPC server bootstrap
+│   └── chat_servicer.py     # Implements Chat() and ProvideLocation() RPCs
+├── proto/
+│   ├── chat.proto           # Source of truth for gRPC contract
+│   ├── chat_pb2.py          # Generated — do not edit
+│   └── chat_pb2_grpc.py     # Generated — do not edit
+├── models/
+│   ├── chat.py              # ChatRequest, ChatResponse, InputType
+│   ├── order.py             # OrderDraft, Location, Stop
+│   └── tools.py             # Tool definitions (OpenAI function-calling format)
 ├── processors/
-│   ├── voice.py         # Whisper STT (local or OpenAI API mode)
-│   ├── image.py         # Base64-encodes images for vision models
-│   └── text.py          # Text preprocessing
+│   ├── voice.py             # Whisper STT — local (faster-whisper) or OpenAI API
+│   ├── image.py             # Encodes image bytes → base64 data URL for vision models
+│   └── text.py              # Normalises whitespace
 ├── session/
-│   └── manager.py       # Redis-backed conversation history (30-min TTL, last 20 msgs)
-└── models/
-    ├── chat.py          # ChatRequest, ChatResponse Pydantic models
-    ├── order.py         # OrderDraft, Stop, Location
-    └── tools.py         # Tool definitions for LLM function calling
+│   └── manager.py           # Redis-backed history (last 20 msgs, 30-min TTL)
+└── tools/
+    ├── places_search.py     # Google Places API — returns top 3 results
+    ├── geocode.py           # Forward + reverse geocoding via Google Maps API
+    └── device_location.py   # Emits REQUEST_GPS action to mobile client
+
+tests/
+├── conftest.py              # Shared fixtures (mock LLM, mock Redis, test gRPC server)
+├── test_api.py              # HTTP endpoint tests
+├── test_response_parser.py  # Order draft extraction tests
+└── test_session.py          # Session manager tests
+
+scripts/
+└── generate_stubs.sh        # Regenerates chat_pb2.py and chat_pb2_grpc.py from chat.proto
 ```
 
 ---
 
 ## Key design decisions
 
-**gRPC + HTTP dual server:** `app/main.py` must start both the FastAPI ASGI server (uvicorn) and the gRPC server (asyncio) in the same process. Use `asyncio.gather()` or a startup event.
+**gRPC + HTTP dual server:** `app/main.py` starts both the FastAPI ASGI server (uvicorn) and the gRPC server in the same process via FastAPI's lifespan context manager using `asyncio.gather()`.
 
-**Streaming flow:** The gRPC `Chat()` RPC streams `ChatResponse` messages of type `TextChunk`, `OrderDraft`, `ActionRequest`, or `ErrorInfo`. The Go backend proxies these to the mobile client as SSE events with matching types: `text`, `order_draft`, `action`, `error`.
+**Streaming flow:** The gRPC `Chat()` RPC streams `ChatResponse` messages of type `TextChunk`, `OrderDraftMsg`, `ActionRequest`, or `ErrorInfo`. The Go backend proxies these to the mobile client as SSE events with matching types: `text`, `order_draft`, `action`, `error`.
 
-**Tool-calling loop:** `llm_client.py` runs a loop — call LLM → if response contains tool calls, execute them → feed results back → repeat — until the LLM returns a final text response containing the order draft.
+**Tool-calling loop:** `llm_client.py` runs up to 5 rounds — call LLM → if response contains tool calls, execute them → feed results back → repeat — until the LLM returns a final response containing the order draft.
 
-**LiteLLM proxy vs. direct:** For multi-key rotation and load balancing across providers, traffic goes through the LiteLLM proxy (`LITELLM_PROXY_URL`). Direct key usage (`OPENAI_API_KEY` etc.) is the fallback for simple single-key setups.
+**Model fallback chain:** Gemini 2.5 Flash → Gemini 2.0 Flash Lite → Claude Sonnet → GPT-4. First model that responds successfully is used.
 
-**Whisper modes:** `WHISPER_MODE=local` loads the model in-process (GPU/CPU); `WHISPER_MODE=api` calls OpenAI's transcription endpoint. Switch via env var — no code change needed.
+**Order draft format:** LLM wraps structured output in `<order_draft>...</order_draft>` tags. `response_parser.py` extracts and validates this into an `OrderDraft` model. The tag is stripped before streaming text to the user.
 
-**Session TTL:** Redis keys expire after `SESSION_TTL_SECONDS` (default 1800). The session manager stores the last 20 messages and the user's last known location (5-min TTL).
+**LiteLLM proxy vs. direct:** Traffic goes through the LiteLLM proxy (`LITELLM_PROXY_URL`) for multi-key rotation. Direct API keys (`OPENAI_API_KEY` etc.) are the fallback for single-key setups.
 
-**Proto generation:** `chat_pb2.py` and `chat_pb2_grpc.py` are generated — never edit them manually. Re-run `generate_proto.sh` after any `.proto` change.
+**Whisper modes:** `WHISPER_MODE=local` loads faster-whisper in-process (GPU/CPU); `WHISPER_MODE=api` calls OpenAI's transcription endpoint. Switch via env var — no code change needed.
+
+**Session TTL:** Redis keys expire after `SESSION_TTL_SECONDS` (default 1800). Session manager stores the last 20 messages and the user's last known GPS location (5-min TTL).
+
+**Proto generation:** `chat_pb2.py` and `chat_pb2_grpc.py` are generated — never edit them manually. Re-run `scripts/generate_stubs.sh` after any `.proto` change.
 
 ---
 
 ## Configuration reference
 
-All settings are in `app/config.py` via `pydantic-settings` and loaded from `.env`:
+All settings are in `app/core/config.py` via `pydantic-settings` and loaded from `.env`:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -137,7 +155,10 @@ All settings are in `app/config.py` via `pydantic-settings` and loaded from `.en
 | `ENV` | `development` | `development` or `production` |
 | `REDIS_URL` | `redis://localhost:6379/0` | Session store |
 | `LITELLM_PROXY_URL` | `http://localhost:4000` | LLM proxy |
-| `GOOGLE_PLACES_API_KEY` | — | Location resolution |
+| `OPENAI_API_KEY` | — | OpenAI key |
+| `ANTHROPIC_API_KEY` | — | Claude key |
+| `GEMINI_API_KEY` | — | Gemini key |
+| `GOOGLE_PLACES_API_KEY` | — | Places + Geocoding |
 | `WHISPER_MODEL` | `base` | `tiny`/`base`/`small`/`medium`/`large` |
 | `WHISPER_MODE` | `local` | `local` or `api` |
 | `SESSION_TTL_SECONDS` | `1800` | Redis session expiry |
@@ -147,6 +168,6 @@ All settings are in `app/config.py` via `pydantic-settings` and loaded from `.en
 ## Testing
 
 - Framework: `pytest` + `pytest-asyncio`
-- Use mock LLM client and tool mocks in `tests/conftest.py`
+- Mock LLM client and tool mocks in `tests/conftest.py`
 - gRPC tests use an in-process test server
 - HTTP tests use `httpx.AsyncClient` with the FastAPI `app` directly
