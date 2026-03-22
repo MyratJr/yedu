@@ -54,3 +54,6 @@ logs/
 
 # Docker
 docker/volumes/
+
+# Claude
+.claude

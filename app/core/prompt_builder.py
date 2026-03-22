@@ -117,7 +117,7 @@ SYSTEM_PROMPT_AR = """أنت يدو، مساعد ذكاء اصطناعي لمن�
 
 
 def build_messages(
-    user_text: str,
+    user_content: str | list,
     history: list[dict],
     language: str = "en",
     location: dict | None = None,
@@ -125,6 +125,10 @@ def build_messages(
     """
     Returns the full messages list to send to the LLM:
     [system, ...history, user]
+
+    user_content can be:
+      - str: plain text (text/audio only)
+      - list: multimodal content parts (when image is included)
     """
     system_prompt = POINT_PROMPT_AR if language == "ar" else POINT_PROMPT_EN
 
@@ -136,6 +140,5 @@ def build_messages(
 
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
-    print("------>", messages)
+    messages.append({"role": "user", "content": user_content})
     return messages

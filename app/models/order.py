@@ -19,7 +19,7 @@ class OrderDraft(BaseModel):
     pickup:      Location
     destination: Location
     stops:       List[Stop] = []
-    ride_type:   str = "standard"   # "standard" | "premium" | "xl"
+    ride_type:   str = "standard"  
     notes:       Optional[str] = None
 
     def is_complete(self) -> bool:

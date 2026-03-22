@@ -13,8 +13,8 @@ import logging
 import grpc
 
 from app.core import router
-from app.models.chat import ChatRequest, InputType
-from app.proto import chat_pb2, chat_pb2_grpc  
+from app.models.chat import ChatRequest
+from app.proto import chat_pb2, chat_pb2_grpc
 from app.session.manager import session_manager
 
 logger = logging.getLogger(__name__)
@@ -29,38 +29,22 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
         yields ChatResponse messages back.
         """
         async for proto_req in request_iterator:
-            # Map proto oneof → internal model
-            input_type = InputType.text
-            text  = None
-            audio = None
-            image = None
-
-            which = proto_req.WhichOneof("input")
-            if which == "text_input":
-                input_type = InputType.text
-                text = proto_req.text_input
-            elif which == "audio_input":
-                input_type = InputType.audio
-                audio = proto_req.audio_input
-            elif which == "image_input":
-                input_type = InputType.image
-                image = proto_req.image_input
-
             request = ChatRequest(
                 session_id=proto_req.session_id,
                 user_id=proto_req.user_id,
-                input_type=input_type,
-                text=text,
-                audio=audio,
-                image=image,
+                text=proto_req.text_input or None,
+                audio=proto_req.audio_input or None,
+                image=proto_req.image_input or None,
                 language=proto_req.language or "en",
             )
 
             logger.info(
-                "Chat RPC: session=%s user=%s type=%s",
+                "Chat RPC: session=%s user=%s text=%s audio=%s image=%s",
                 request.session_id,
                 request.user_id,
-                request.input_type,
+                bool(request.text),
+                bool(request.audio),
+                bool(request.image),
             )
 
             try:

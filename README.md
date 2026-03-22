@@ -130,11 +130,6 @@ The LLM can invoke tools during a response. `llm_client.py` runs up to **5 round
 ```
 Call LLM
   └─ if tool_calls in response:
-       execute tool(s):
-         search_places(query, language)
-         geocode_address(address)
-         reverse_geocode(lat, lng)
-         request_user_location()   ← sends REQUEST_GPS action to mobile
        feed results back → repeat
   └─ final text response
 ```

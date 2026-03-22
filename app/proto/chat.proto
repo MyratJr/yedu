@@ -11,14 +11,12 @@ service ChatService {
 
 // ── Requests ─────────────────────────────────────────────────
 message ChatRequest {
-  string session_id = 1;
-  string user_id    = 2;
-  oneof input {
-    string text_input  = 3;
-    bytes  audio_input = 4;
-    bytes  image_input = 5;
-  }
-  string language = 6;  // "en" | "ar"
+  string session_id  = 1;
+  string user_id     = 2;
+  string text_input  = 3;  // optional plain text
+  bytes  audio_input = 4;  // optional audio bytes
+  bytes  image_input = 5;  // optional image bytes
+  string language    = 6;  // "en" | "ar"
 }
 
 message LocationPayload {

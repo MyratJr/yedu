@@ -4,9 +4,6 @@ from typing import AsyncGenerator
 import litellm
 from app.core.config import get_settings
 from app.models.tools import TOOLS
-from app.tools.geocode import geocode_address, reverse_geocode
-from app.tools.places_search import search_places
-from app.tools.device_location import request_user_location
 import json
 
 logger = logging.getLogger(__name__)
@@ -15,7 +12,7 @@ MAX_TOOL_ROUNDS = 5
 
 MODELS = [
     "gemini/gemini-2.5-flash",
-    "gemini/gemini-2.0-flash-lite",
+    "gemini/gemini-2.0-flash",
     "claude-sonnet-4-20250514",
     "gpt-4o",
 ]
@@ -52,13 +49,15 @@ async def stream_response(
         for model in MODELS:
             try:
                 logger.info("Trying model: %s", model)
-                response = await litellm.acompletion(
+                kwargs: dict = dict(
                     model=model,
                     messages=current_messages,
-                    tools=TOOLS,
-                    tool_choice="auto",
                     stream=True,
                 )
+                if TOOLS:
+                    kwargs["tools"] = TOOLS
+                    kwargs["tool_choice"] = "auto"
+                response = await litellm.acompletion(**kwargs)
 
                 # Buffer the stream — errors during iteration also fall through
                 collected_text = ""
@@ -120,35 +119,6 @@ async def stream_response(
             ],
         })
 
-        for tc in tool_calls:
-            if tc["name"] == "request_user_location":
-                yield {"type": "action", "action_type": "REQUEST_GPS", "payload": ""}
-
-            args = json.loads(tc["arguments"] or "{}")
-            tool_result = await _execute_tool(tc["name"], args)
-            current_messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": tool_result,
-            })
-
         logger.debug("Tool round %d complete", round_num + 1)
 
     yield {"type": "error", "code": "MAX_ROUNDS", "message": "Tool loop limit reached"}
-
-
-async def _execute_tool(name: str, args: dict) -> str:
-    try:
-        if name == "search_places":
-            result = await search_places(query=args["query"], language=args.get("language", "en"))
-        elif name == "geocode_address":
-            result = await geocode_address(args["address"])
-        elif name == "reverse_geocode":
-            result = await reverse_geocode(latitude=args["latitude"], longitude=args["longitude"])
-        elif name == "request_user_location":
-            result = await request_user_location()
-        else:
-            result = {"error": f"Unknown tool: {name}"}
-    except Exception as exc:
-        result = {"error": str(exc)}
-    return json.dumps(result)

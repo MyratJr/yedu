@@ -5,7 +5,7 @@ from app.proto import chat_pb2, chat_pb2_grpc
 
 async def main():
     # Read your audio file
-    audio_path = "test.wav"   # put your audio file here
+    audio_path = "client_voice.wav"   # put your audio file here
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
 
