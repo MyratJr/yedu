@@ -1,27 +1,28 @@
 """
 app/api/routes.py
 
-HTTP health and debug endpoints.
-These are useful for liveness probes and local development.
+HTTP endpoints: liveness/readiness probes + session management API.
 """
 
 from __future__ import annotations
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
 from app.session.manager import session_manager
 
-router = APIRouter(tags=["ops"])
+router = APIRouter()
 
 
-@router.get("/health", summary="Liveness check")
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@router.get("/health", tags=["ops"], summary="Liveness check")
 async def health():
     return {"status": "ok"}
 
 
-@router.get("/ready", summary="Readiness check — verifies Redis")
+@router.get("/ready", tags=["ops"], summary="Readiness check — verifies Redis")
 async def ready():
     settings = get_settings()
     try:
@@ -32,22 +33,36 @@ async def ready():
     except Exception:
         redis_ok = False
 
-    status = "ok" if redis_ok else "degraded"
     return {
-        "status": status,
+        "status": "ok" if redis_ok else "degraded",
         "redis": "ok" if redis_ok else "unreachable",
         "grpc_port": settings.grpc_port,
     }
 
 
-@router.get("/debug/session/{session_id}", summary="Inspect session history")
-async def debug_session(session_id: str):
-    history  = await session_manager.get_history(session_id)
-    location = await session_manager.get_location(session_id)
-    return {"session_id": session_id, "history": history, "location": location}
+# ── Session API ───────────────────────────────────────────────────────────────
+
+@router.get("/sessions", tags=["sessions"], summary="List all active sessions")
+async def list_sessions():
+    """Return the IDs of all sessions that have history in Redis."""
+    ids = await session_manager.list_sessions()
+    return {"sessions": ids, "count": len(ids)}
 
 
-@router.delete("/debug/session/{session_id}", summary="Clear session history")
-async def clear_session(session_id: str):
+@router.get("/sessions/{session_id}", tags=["sessions"], summary="Get session history")
+async def get_session(session_id: str):
+    """Return the full conversation history for a session."""
+    history = await session_manager.get_history(session_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="Session not found or empty")
+    return {"session_id": session_id, "messages": history, "count": len(history)}
+
+
+@router.delete("/sessions/{session_id}", tags=["sessions"], summary="Clear session history")
+async def delete_session(session_id: str):
+    """Delete all history for a session."""
+    history = await session_manager.get_history(session_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="Session not found or empty")
     await session_manager.clear(session_id)
     return {"cleared": session_id}

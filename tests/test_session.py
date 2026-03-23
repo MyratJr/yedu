@@ -36,25 +36,3 @@ async def test_get_history(manager):
     history = await sm.get_history("sess-1")
     assert len(history) == 2
     assert history[0]["role"] == "user"
-
-
-@pytest.mark.asyncio
-async def test_append_message(manager):
-    sm, redis = manager
-    pipe = redis.pipeline.return_value
-    await sm.append_message("sess-1", "user", "I need a ride")
-    pipe.rpush.assert_called_once()
-    pipe.ltrim.assert_called_once()
-    pipe.expire.assert_called_once()
-    pipe.execute.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_set_and_get_location(manager):
-    sm, redis = manager
-    await sm.set_location("sess-1", 37.9868, 58.3610)
-    redis.set.assert_called_once()
-
-    redis.get.return_value = json.dumps({"latitude": 37.9868, "longitude": 58.3610})
-    loc = await sm.get_location("sess-1")
-    assert loc["latitude"] == pytest.approx(37.9868)

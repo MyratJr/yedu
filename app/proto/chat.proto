@@ -4,75 +4,68 @@ package chat;
 
 option go_package = "./chatpb";
 
+// ── Service ───────────────────────────────────────────────────────────────────
+//
+// Bidirectional streaming:
+//   Client sends one ChatRequest per user turn (text / audio / images).
+//   Server streams back one or more ChatResponse chunks per turn.
+//
+// Multi-turn flow:
+//   Turn 1 — user sends pickup only  → server asks "Where would you like to go?"
+//   Turn 1 — user sends dest only    → server asks "Where should I pick you up?"
+//   Turn 2 — user answers            → server returns final route list
+//   Any turn — user sends both       → server returns final route list immediately
+//
+// Final route is returned as a TextChunk containing a JSON array, e.g.:
+//   ["user's location", "Stop A", "Destination B"]
+
 service ChatService {
   rpc Chat(stream ChatRequest) returns (stream ChatResponse);
-  rpc ProvideLocation(LocationPayload) returns (LocationAck);
 }
 
-// ── Requests ─────────────────────────────────────────────────
+// ── Request ───────────────────────────────────────────────────────────────────
+
 message ChatRequest {
-  string session_id  = 1;
-  string user_id     = 2;
-  string text_input  = 3;  // optional plain text
-  bytes  audio_input = 4;  // optional audio bytes
-  bytes  image_input = 5;  // optional image bytes
-  string language    = 6;  // "en" | "ar"
+  string session_id           = 1;  // links turns together; new UUID per booking flow
+  string user_id              = 2;  // authenticated user ID from Go backend
+  string text_input           = 3;  // plain text (optional)
+  repeated bytes audio_inputs = 4;  // one or more audio clips (transcribed server-side)
+  repeated bytes image_inputs = 5;  // one or more images — order: pickup → stops → destination
+  string language             = 6;  // "en" | "ar"
 }
 
-message LocationPayload {
-  string session_id = 1;
-  double latitude   = 2;
-  double longitude  = 3;
-}
+// ── Response ──────────────────────────────────────────────────────────────────
 
-message LocationAck {
-  bool success = 1;
-}
-
-// ── Responses ────────────────────────────────────────────────
 message ChatResponse {
   oneof payload {
-    TextChunk     text_chunk  = 1;
-    OrderDraftMsg order_draft = 2;
-    ActionRequest action      = 3;
-    ErrorInfo     error       = 4;
+    TextChunk     text_chunk = 1;  // streaming text (question or final route list)
+    ActionRequest action     = 2;  // server requesting client action (e.g. GPS)
+    ErrorInfo     error      = 3;  // error details
   }
 }
 
+// Streaming text chunk from the LLM.
+// Collect all chunks until is_final = true, then parse the assembled text.
+// If text is a JSON array  → it's the final route: ["pickup", ..."destination"]
+// If text is a question    → display it to the user and wait for their reply
 message TextChunk {
   string text     = 1;
   bool   is_final = 2;
 }
 
-message OrderDraftMsg {
-  string pickup_address      = 1;
-  double pickup_lat          = 2;
-  double pickup_lng          = 3;
-  string destination_address = 4;
-  double destination_lat     = 5;
-  double destination_lng     = 6;
-  repeated StopMsg stops     = 7;
-  string ride_type           = 8;  // "standard" | "premium" | "xl"
-  string notes               = 9;
-}
-
-message StopMsg {
-  string address = 1;
-  double lat     = 2;
-  double lng     = 3;
-}
-
+// Server-initiated action the client must perform.
 message ActionRequest {
   enum ActionType {
     UNKNOWN       = 0;
-    REQUEST_GPS   = 1;
-    CONFIRM_ORDER = 2;
+    REQUEST_GPS   = 1;  // server needs the user's current GPS coordinates
+    CONFIRM_ORDER = 2;  // server asking user to confirm the assembled route
   }
   ActionType type    = 1;
-  string     payload = 2;
+  string     payload = 2;  // optional JSON context for the action
 }
 
+// Error detail returned when the server cannot process the request.
 message ErrorInfo {
-  string code    = 1;
+  string code    = 1;  // e.g. "EMPTY_INPUT", "LLM_ERROR", "INTERNAL_ERROR"
   string message = 2;
 }

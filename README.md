@@ -64,18 +64,15 @@ app/
 │   ├── router.py            # Orchestrates input → LLM → order draft pipeline
 │   ├── llm_client.py        # LiteLLM wrapper; tool-calling loop; multi-model fallback
 │   ├── prompt_builder.py    # Builds system prompt + history messages (EN/AR)
-│   ├── response_parser.py   # Extracts OrderDraft from <order_draft>...</order_draft> tags
 │   └── stream_handler.py    # Converts events → gRPC ChatResponse messages
 ├── grpc_server/
 │   ├── server.py            # gRPC server bootstrap
-│   └── chat_servicer.py     # Implements Chat() and ProvideLocation() RPCs
 ├── proto/
 │   ├── chat.proto           # Source of truth for gRPC contract
 │   ├── chat_pb2.py          # Generated — do not edit
 │   └── chat_pb2_grpc.py     # Generated — do not edit
 ├── models/
 │   ├── chat.py              # ChatRequest, ChatResponse, InputType
-│   ├── order.py             # OrderDraft, Location, Stop
 │   └── tools.py             # Tool definitions (OpenAI function-calling format)
 ├── processors/
 │   ├── voice.py             # Whisper STT — local (faster-whisper) or OpenAI API
@@ -142,23 +139,6 @@ Gemini 2.5 Flash → Gemini 2.0 Flash Lite → Claude Sonnet → GPT-4
 
 The first model that responds successfully is used; the rest are skipped.
 
-### Order draft extraction
-
-The LLM wraps structured output in XML-like tags:
-
-```
-<order_draft>
-{
-  "pickup":      { "address": "Dubai Mall", "latitude": 25.1972, "longitude": 55.2797 },
-  "destination": { "address": "DXB Airport", "latitude": 25.2532, "longitude": 55.3657 },
-  "ride_type":   "standard",
-  "notes":       ""
-}
-</order_draft>
-```
-
-`response_parser.py` extracts and validates this into an `OrderDraft` model. The tag is stripped before the text chunk is streamed to the user.
-
 ### gRPC streaming response types
 
 Each `ChatResponse` carries exactly one of:
@@ -166,16 +146,9 @@ Each `ChatResponse` carries exactly one of:
 | Type | When |
 |---|---|
 | `TextChunk` | Streaming text from the LLM |
-| `OrderDraftMsg` | Structured ride order ready for confirmation |
 | `ActionRequest(REQUEST_GPS)` | AI needs the user's device location |
 | `ActionRequest(CONFIRM_ORDER)` | AI asks user to confirm the order |
 | `ErrorInfo` | Something went wrong |
-
-### Session storage (Redis)
-
-- **Conversation history:** last 20 messages, TTL = 30 min (`SESSION_TTL_SECONDS`)
-- **User location:** stored separately after `ProvideLocation()` RPC, TTL = 5 min
-- Key format: `session:{session_id}:messages`, `session:{session_id}:location`
 
 ---
 
@@ -226,7 +199,6 @@ All settings live in `.env` and are loaded by `app/core/config.py`:
 | `GOOGLE_PLACES_API_KEY` | — | Places + Geocoding |
 | `WHISPER_MODEL` | `base` | `tiny` / `base` / `small` / `medium` / `large` |
 | `WHISPER_MODE` | `local` | `local` (faster-whisper) or `api` (OpenAI) |
-| `SESSION_TTL_SECONDS` | `1800` | Redis session expiry (seconds) |
 
 ---
 
@@ -276,13 +248,8 @@ rpc Chat(stream ChatRequest) returns (stream ChatResponse)
 
 Only one of `text_input`, `audio_input`, or `image_input` should be set per message.
 
-**ChatResponse** carries one of: `TextChunk`, `OrderDraftMsg`, `ActionRequest`, `ErrorInfo`.
+**ChatResponse** carries one of: `TextChunk`, `ActionRequest`, `ErrorInfo`.
 
-#### `ProvideLocation` — unary
-
-```
-rpc ProvideLocation(LocationPayload) returns (LocationAck)
-```
 
 Called by the Go backend after the mobile client returns GPS coordinates in response to a `REQUEST_GPS` action. Stores the location in Redis for the next LLM turn.
 

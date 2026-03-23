@@ -1,14 +1,14 @@
 """app/models/chat.py — ChatRequest / ChatResponse Pydantic models."""
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 
 class ChatRequest(BaseModel):
     session_id: str
     user_id:    str
-    text:       Optional[str]   = None
-    audio:      Optional[bytes] = None
-    image:      Optional[bytes] = None
+    text:       Optional[str]        = None
+    audios:     List[bytes]          = []
+    images:     List[bytes]          = []
     language:   str = "en"
 
 
