@@ -6,8 +6,12 @@ HTTP endpoints: liveness/readiness probes + session management API.
 
 from __future__ import annotations
 
+import json
+from typing import List, Optional
+
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
 from app.session.manager import session_manager
@@ -38,6 +42,56 @@ async def ready():
         "redis": "ok" if redis_ok else "unreachable",
         "grpc_port": settings.grpc_port,
     }
+
+
+# ── Chat SSE ──────────────────────────────────────────────────────────────────
+
+@router.post("/chat", tags=["chat"], summary="Chat — streams SSE events (mirrors gRPC Chat RPC)")
+async def chat_sse(
+    session_id: str = Form(...),
+    user_id: str = Form(...),
+    language: str = Form("en"),
+    text: Optional[str] = Form(None),
+    audios: List[UploadFile] = File(default=[]),
+    images: List[UploadFile] = File(default=[]),
+):
+    from app.core.router import handle
+    from app.models.chat import ChatRequest
+
+    req = ChatRequest(
+        session_id=session_id,
+        user_id=user_id,
+        language=language,
+        text=text or None,
+        audios=[await f.read() for f in audios],
+        images=[await f.read() for f in images],
+    )
+
+    async def event_stream():
+        async for response in handle(req):
+            if response.HasField("text_chunk"):
+                data = {
+                    "type": "text",
+                    "text": response.text_chunk.text,
+                    "is_final": response.text_chunk.is_final,
+                }
+            elif response.HasField("action"):
+                data = {
+                    "type": "action",
+                    "action_type": response.action.type,
+                    "payload": response.action.payload,
+                }
+            elif response.HasField("error"):
+                data = {
+                    "type": "error",
+                    "code": response.error.code,
+                    "message": response.error.message,
+                }
+            else:
+                continue
+            yield f"data: {json.dumps(data)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ── Session API ───────────────────────────────────────────────────────────────
