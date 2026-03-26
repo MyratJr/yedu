@@ -13,8 +13,6 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine.*was never awaited")
 
 
-
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator

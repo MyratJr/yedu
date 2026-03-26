@@ -1,12 +1,6 @@
-"""
-app/core/stream_handler.py
-
-Converts internal event dicts from llm_client into gRPC ChatResponse messages.
-"""
-
 from __future__ import annotations
 
-from app.proto import chat_pb2  # type: ignore[import]
+from app.proto import chat_pb2  
 
 
 def make_text_chunk(text: str, is_final: bool = False) -> chat_pb2.ChatResponse:

@@ -96,15 +96,20 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
         favorite_places=request.favorite_places,
     )
 
-    # 5. Stream LLM response, accumulate for saving
+    # 5. Stream LLM response — text chunks arrive word-by-word, route comes at the end
     full_text = ""
     async for event in llm_client.stream_response(messages):
-        if event["type"] == "text":
+        if event["type"] == "text_chunk":
             full_text += event["content"]
-            yield stream_handler.make_text_chunk(
-                text=event["content"],
-                is_final=event.get("is_final", False),
-            )
+            yield stream_handler.make_text_chunk(event["content"], is_final=False)
+
+        elif event["type"] == "done":
+            route_str = event.get("route")
+            if route_str:
+                yield stream_handler.make_text_chunk(route_str, is_final=True)
+            else:
+                yield stream_handler.make_text_chunk("", is_final=True)
+            break
 
         elif event["type"] == "error":
             yield stream_handler.make_error(

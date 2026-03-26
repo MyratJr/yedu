@@ -71,23 +71,44 @@ async def chat_sse(
 
     async def event_stream():
         async for response in handle(req):
-            if response.HasField("text_chunk"):
-                data = {
-                    "type": "text",
-                    "text": response.text_chunk.text,
-                    "is_final": response.text_chunk.is_final,
-                }
-            elif response.HasField("error"):
-                data = {
-                    "type": "error",
-                    "code": response.error.code,
-                    "message": response.error.message,
-                }
-            else:
-                continue
-            yield f"data: {json.dumps(data)}\n\n"
+            try:
+                if response.HasField("text_chunk"):
+                    chunk = response.text_chunk
+                    chunk_type = "text"
+                    if chunk.is_final:
+                        try:
+                            parsed = json.loads(chunk.text)
+                            if isinstance(parsed, list):
+                                chunk_type = "list"
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    data = {
+                        "type": chunk_type,
+                        "text": chunk.text,
+                        "is_final": chunk.is_final,
+                    }
+                elif response.HasField("error"):
+                    data = {
+                        "type": "error",
+                        "code": response.error.code,
+                        "message": response.error.message,
+                    }
+                else:
+                    continue
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+                yield f"data: {json.dumps(data)}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disables nginx buffering
+        },
+    )
 
 
 # ── Session API ───────────────────────────────────────────────────────────────

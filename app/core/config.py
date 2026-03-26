@@ -17,9 +17,12 @@ class Settings(BaseSettings):
 
     # LLM
     litellm_proxy_url: str = "http://localhost:4000"
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
-    gemini_api_key: str = ""
+    gemini_models: str = ""
+    deepseek_models: str = ""
+    llm_max_tokens: str = ""
+    gemini_api_keys: str = ""
+    deepseek_api_keys: str = ""
+
 
     # Whisper
     whisper_model: str = "base"

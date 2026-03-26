@@ -85,11 +85,6 @@ app/
     ├── geocode.py           # Forward + reverse geocoding via Google Maps API
     └── device_location.py   # Emits REQUEST_GPS action to mobile client
 
-tests/
-├── conftest.py              # Shared fixtures (mock LLM, mock Redis, test gRPC server)
-├── test_api.py              # HTTP endpoint tests
-├── test_response_parser.py  # Order draft extraction tests
-└── test_session.py          # Session manager tests
 
 scripts/
 └── generate_stubs.sh        # Regenerates chat_pb2.py and chat_pb2_grpc.py from chat.proto
@@ -255,24 +250,7 @@ Called by the Go backend after the mobile client returns GPS coordinates in resp
 
 ---
 
-## 8. Testing
-
-```bash
-# Run all tests
-pytest
-
-# Specific file
-pytest tests/test_router.py -v
-
-# Single test
-pytest tests/test_router.py::test_function_name -v
-```
-
-Test fixtures in `tests/conftest.py` mock the LLM client, Redis, and tools. gRPC tests spin up an in-process server.
-
----
-
-## 9. Proto reference
+## 8. Proto reference
 
 Edit [app/proto/chat.proto](app/proto/chat.proto), then regenerate stubs:
 

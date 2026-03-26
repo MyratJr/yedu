@@ -105,12 +105,6 @@ app/
     ├── places_search.py     # Google Places API — returns top 3 results
     └── geocode.py           # Forward + reverse geocoding via Google Maps API
 
-tests/
-├── conftest.py              # Shared fixtures (mock LLM, mock Redis, test gRPC server)
-├── test_api.py              # HTTP endpoint tests
-├── test_response_parser.py  # Order draft extraction tests
-└── test_session.py          # Session manager tests
-
 scripts/
 └── generate_stubs.sh        # Regenerates chat_pb2.py and chat_pb2_grpc.py from chat.proto
 ```
@@ -153,12 +147,3 @@ All settings are in `app/core/config.py` via `pydantic-settings` and loaded from
 | `GOOGLE_PLACES_API_KEY` | — | Places + Geocoding |
 | `WHISPER_MODEL` | `base` | `tiny`/`base`/`small`/`medium`/`large` |
 | `WHISPER_MODE` | `local` | `local` or `api` |
-
----
-
-## Testing
-
-- Framework: `pytest` + `pytest-asyncio`
-- Mock LLM client and tool mocks in `tests/conftest.py`
-- gRPC tests use an in-process test server
-- HTTP tests use `httpx.AsyncClient` with the FastAPI `app` directly
