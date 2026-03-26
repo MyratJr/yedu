@@ -1,10 +1,3 @@
-"""
-app/processors/voice.py
-
-Whisper speech-to-text.
-WHISPER_MODE=local  → loads model in-process (GPU/CPU)
-WHISPER_MODE=api    → calls OpenAI transcription endpoint
-"""
 
 from __future__ import annotations
 

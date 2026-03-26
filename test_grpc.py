@@ -8,9 +8,11 @@ Usage:
     python test_grpc.py image               # image only  (needs test.jpg)
     python test_grpc.py multi_image         # multiple images as route points
     python test_grpc.py multi_audio         # multiple audio clips combined
+    python test_grpc.py text_audio          # text + audio together
+    python test_grpc.py text_image          # text + image together
     python test_grpc.py all                 # text + audio + image together
+    python test_grpc.py fav_places          # favorite places resolution
     python test_grpc.py conv_pickup         # multi-turn: pickup first, then destination
-    python test_grpc.py conv_dest           # multi-turn: destination first, then pickup
 """
 
 import asyncio
@@ -20,30 +22,20 @@ from pathlib import Path
 import grpc
 from app.proto import chat_pb2, chat_pb2_grpc
 
-SERVER = "localhost:50051"
+SERVER  = "localhost:50051"
 SESSION = "test-sess-1"
-USER = "test-user-1"
+USER    = "test-user-1"
 
 
 def print_response(response) -> None:
     if response.HasField("text_chunk"):
         print(response.text_chunk.text, end="", flush=True)
-    elif response.HasField("order_draft"):
-        d = response.order_draft
-        print("\n\n--- ORDER DRAFT ---")
-        print(f"  Pickup:      {d.pickup_address}")
-        print(f"  Destination: {d.destination_address}")
-        for i, stop in enumerate(d.stops, 1):
-            print(f"  Stop {i}:      {stop.address}")
-        print(f"  Ride type:   {d.ride_type}")
-    elif response.HasField("action"):
-        print(f"\n--- ACTION: {response.action.type} ---")
     elif response.HasField("error"):
         print(f"\n--- ERROR: {response.error.code} — {response.error.message} ---")
 
 
 async def run(label: str, session_id: str = SESSION, **kwargs) -> None:
-    """Send one ChatRequest with any combination of text/audios/images."""
+    """Send one ChatRequest with any combination of text/audios/images/favorite_places."""
     print(f"\n{'='*50}")
     print(f"TEST: {label}")
     print(f"{'='*50}")
@@ -71,7 +63,7 @@ async def run(label: str, session_id: str = SESSION, **kwargs) -> None:
 async def run_conversation(label: str, turns: list[dict]) -> None:
     """
     Simulate a multi-turn conversation.
-    Each turn is a dict of kwargs for ChatRequest (text_input, audio_inputs, image_inputs).
+    Each turn is a dict of kwargs for ChatRequest.
     All turns share the same session_id so history accumulates.
     """
     import uuid
@@ -90,7 +82,6 @@ async def run_conversation(label: str, turns: list[dict]) -> None:
 
 
 def _find_images() -> list[Path]:
-    """Return all test images found next to this script (test.jpg, test2.jpg, …)."""
     candidates = []
     for ext in ("jpg", "jpeg", "png"):
         candidates += sorted(Path(".").glob(f"test*.{ext}"))
@@ -98,7 +89,6 @@ def _find_images() -> list[Path]:
 
 
 def _find_audios() -> list[Path]:
-    """Return all test audio files found next to this script (test.wav, test2.wav, …)."""
     return sorted(Path(".").glob("test*.wav"))
 
 
@@ -107,8 +97,8 @@ async def main(case: str = "all_cases") -> None:
     # ── Text only ────────────────────────────────────────────────
     if case in ("text", "all_cases"):
         await run(
-            "Text only",
-            text_input="make london eye as a second stop",
+            "Text only — dest only (auto pickup)",
+            text_input="Take me to Burj Khalifa",
         )
 
     # ── Multi-stop text ──────────────────────────────────────────
@@ -116,6 +106,19 @@ async def main(case: str = "all_cases") -> None:
         await run(
             "Multi-stop text",
             text_input="Pick me up from Burj Khalifa, stop at City Walk, then drop me at Palm Jumeirah",
+        )
+
+    # ── Favorite places ──────────────────────────────────────────
+    if case in ("fav_places", "all_cases"):
+        await run(
+            "Favorite places — 'take me to Work'",
+            text_input="Take me to Work",
+            favorite_places=["Home", "My work center", "Gym"],
+        )
+        await run(
+            "Favorite places — pickup from favorite",
+            text_input="Pick me up from Home and drop at Gym",
+            favorite_places=["Home", "Work", "Gym"],
         )
 
     # ── Audio only (single) ──────────────────────────────────────
@@ -200,24 +203,13 @@ async def main(case: str = "all_cases") -> None:
                 image_inputs=[i.read_bytes() for i in images],
             )
 
-
     # ── Multi-turn: pickup only → AI asks destination → user replies ────────
     if case in ("conv_pickup", "all_cases"):
         await run_conversation(
             "Pickup first, then destination",
             turns=[
-                {"text_input": "pick me up from my location"},
+                {"text_input": "pick me up from Burj Khalifa"},
                 {"text_input": "Yyldyz Hotel"},
-            ],
-        )
-
-    # ── Multi-turn: destination only → AI asks pickup → user replies ─────────
-    if case in ("conv_dest", "all_cases"):
-        await run_conversation(
-            "Destination first, then pickup",
-            turns=[
-                {"text_input": "I want to go to Berkarar Mall"},
-                {"text_input": "my current location"},
             ],
         )
 

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Whisper
     whisper_model: str = "base"
-    whisper_mode: str = "local"  # "local" | "api"
+    whisper_mode: str = "local"  
 
     # Tools
     google_places_api_key: str = ""

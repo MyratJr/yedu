@@ -34,6 +34,7 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
                 audios=list(proto_req.audio_inputs),
                 images=list(proto_req.image_inputs),
                 language=proto_req.language or "en",
+                favorite_places=list(proto_req.favorite_places),
             )
 
             logger.info(

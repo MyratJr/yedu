@@ -4,12 +4,13 @@ from pydantic import BaseModel
 
 
 class ChatRequest(BaseModel):
-    session_id: str
-    user_id:    str
-    text:       Optional[str]        = None
-    audios:     List[bytes]          = []
-    images:     List[bytes]          = []
-    language:   str = "en"
+    session_id:      str
+    user_id:         str
+    text:            Optional[str]    = None
+    audios:          List[bytes]      = []
+    images:          List[bytes]      = []
+    language:        str              = "en"
+    favorite_places: List[str]        = []  # e.g. ["Home", "Work", "Mom's House"]
 
 
 class ChatResponse(BaseModel):

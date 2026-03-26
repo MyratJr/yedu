@@ -19,29 +19,84 @@ from app.session.manager import session_manager
 
 logger = logging.getLogger(__name__)
 
+# Status chunks shown to the client while input is being processed, per language.
+_STATUS: dict[str, dict[str, str]] = {
+    "en": {
+        "text":        "Analyzing your message...\n",
+        "voice_one":   "Analyzing voice message...\n",
+        "voice_many":  "Analyzing {n} voice messages...\n",
+        "image_one":   "Analyzing image...\n",
+        "image_many":  "Analyzing {n} images...\n",
+    },
+    "ar": {
+        "text":        "جارٍ تحليل رسالتك...\n",
+        "voice_one":   "جارٍ تحليل الرسالة الصوتية...\n",
+        "voice_many":  "جارٍ تحليل {n} رسائل صوتية...\n",
+        "image_one":   "جارٍ تحليل الصورة...\n",
+        "image_many":  "جارٍ تحليل {n} صور...\n",
+    },
+    "ru": {
+        "text":        "Анализирую ваше сообщение...\n",
+        "voice_one":   "Анализирую голосовое сообщение...\n",
+        "voice_many":  "Анализирую {n} голосовых сообщения...\n",
+        "image_one":   "Анализирую изображение...\n",
+        "image_many":  "Анализирую {n} изображения...\n",
+    },
+    "tr": {
+        "text":        "Mesajınız analiz ediliyor...\n",
+        "voice_one":   "Sesli mesaj analiz ediliyor...\n",
+        "voice_many":  "{n} sesli mesaj analiz ediliyor...\n",
+        "image_one":   "Görsel analiz ediliyor...\n",
+        "image_many":  "{n} görsel analiz ediliyor...\n",
+    },
+}
+
+
+def _status(language: str, key: str, n: int = 0) -> str:
+    lang = _STATUS.get(language, _STATUS["en"])
+    return lang[key].format(n=n)
+
 
 async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
     """
     Main entry point. Yields gRPC ChatResponse protobuf messages.
     """
-    # 1. Resolve all inputs → LLM content + plain text for history
+    lang = request.language
+
+    # 1. Emit per-type status chunks in the client's language
+    if request.text:
+        yield stream_handler.make_text_chunk(_status(lang, "text"), is_final=False)
+
+    if request.audios:
+        n = len(request.audios)
+        key = "voice_one" if n == 1 else "voice_many"
+        yield stream_handler.make_text_chunk(_status(lang, key, n), is_final=False)
+
+    if request.images:
+        n = len(request.images)
+        key = "image_one" if n == 1 else "image_many"
+        yield stream_handler.make_text_chunk(_status(lang, key, n), is_final=False)
+
+    # 2. Resolve all inputs → LLM content + plain text for history
     user_content, history_text = await _resolve_input(request)
     if not user_content:
         yield stream_handler.make_error("EMPTY_INPUT", "No input received")
         return
 
-    # 2. Load existing history and save the new user turn
+    # 3. Load existing history and save the new user turn
     history = await session_manager.get_history(request.session_id)
     await session_manager.append_message(request.session_id, "user", history_text)
 
-    # 3. Build messages: [system, ...history, user]
+
+    # 4. Build messages: [system, ...history, user]
     messages = prompt_builder.build_messages(
         user_content=user_content,
         history=history,
         language=request.language,
+        favorite_places=request.favorite_places,
     )
 
-    # 4. Stream LLM response, accumulate for saving
+    # 5. Stream LLM response, accumulate for saving
     full_text = ""
     async for event in llm_client.stream_response(messages):
         if event["type"] == "text":
@@ -58,7 +113,7 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
             )
             return
 
-    # 5. Persist assistant reply so next turn has full context
+    # 6. Persist assistant reply so next turn has full context
     if full_text:
         await session_manager.append_message(
             request.session_id, "assistant", full_text

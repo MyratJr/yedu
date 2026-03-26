@@ -79,8 +79,6 @@
   .msg-body { background: #1a1d2e; border-radius: 8px; padding: 10px 14px; white-space: pre-wrap; word-break: break-word; }
   .msg-body.streaming { border-left: 2px solid #4c4fac; }
   .msg-body.error { background: #2d1515; border-left: 2px solid #ef4444; color: #fca5a5; }
-  .msg-body.action { background: #1a2d1a; border-left: 2px solid #22c55e; color: #86efac; }
-  .msg-body.order { background: #1a1d2e; border-left: 2px solid #f59e0b; }
 
   .order-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
   .order-table td { padding: 4px 8px; border-bottom: 1px solid #2d3148; }
@@ -120,21 +118,6 @@
 <main>
   <!-- ── Left panel ── -->
   <div class="left">
-    <div class="panel-title">Quick Tests</div>
-    <div class="quick-tests">
-      <button class="quick-btn" onclick="quickTest('text')">Text only <span class="tag">test_grpc: text</span></button>
-      <button class="quick-btn" onclick="quickTest('multi')">Multi-stop text <span class="tag">multi</span></button>
-      <button class="quick-btn" onclick="quickTest('text_audio')">Text + Audio <span class="tag">text_audio</span></button>
-      <button class="quick-btn" onclick="quickTest('text_image')">Text + Image <span class="tag">text_image</span></button>
-      <button class="quick-btn" onclick="quickTest('audio')">Audio only <span class="tag">audio</span></button>
-      <button class="quick-btn" onclick="quickTest('multi_audio')">Multiple audio <span class="tag">multi_audio</span></button>
-      <button class="quick-btn" onclick="quickTest('image')">Image only <span class="tag">image</span></button>
-      <button class="quick-btn" onclick="quickTest('multi_image')">Multiple images <span class="tag">multi_image</span></button>
-      <button class="quick-btn" onclick="quickTest('all')">Text + Audio + Image <span class="tag">all</span></button>
-      <button class="quick-btn" onclick="quickConv('conv_pickup')">Conv: pickup → dest <span class="tag">conv_pickup</span></button>
-      <button class="quick-btn" onclick="quickConv('conv_dest')">Conv: dest → pickup <span class="tag">conv_dest</span></button>
-    </div>
-
     <div class="panel-title" style="margin-top:6px;">Request</div>
     <div class="form-area">
       <div class="row2">
@@ -152,8 +135,8 @@
         <select id="language">
           <option value="en">English (en)</option>
           <option value="ar">Arabic (ar)</option>
-          <option value="tk">Turkmen (tk)</option>
           <option value="ru">Russian (ru)</option>
+          <option value="tr">Turkish (tr)</option>
         </select>
       </div>
       <div class="field">
@@ -177,6 +160,14 @@
           <input type="file" id="image-files" multiple accept="image/*" onchange="updateFileCount(this,'image-count')">
         </label>
         <div class="file-count" id="image-count"></div>
+      </div>
+      <div class="field">
+        <label>Favorite Places</label>
+        <div id="fav-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:4px;"></div>
+        <div style="display:flex;gap:6px;">
+          <input id="fav-input" placeholder="e.g. Home, Work, Mom's House" style="flex:1;background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;padding:6px 10px;font-size:12px;outline:none;" onkeydown="if(event.key==='Enter'){event.preventDefault();addFavPlace();}">
+          <button onclick="addFavPlace()" style="background:#1e2233;border:1px solid #2d3148;border-radius:6px;color:#a78bfa;font-size:18px;padding:0 10px;cursor:pointer;line-height:1;">+</button>
+        </div>
       </div>
       <button class="send-btn" id="send-btn" onclick="sendRequest()">Send Request</button>
       <button onclick="newSession()" style="background:#1e2233;border:1px solid #2d3148;border-radius:8px;color:#94a3b8;font-size:12px;padding:8px;cursor:pointer;width:100%;">New Session</button>
@@ -225,6 +216,31 @@ let activeTab = 'response';
 let currentStreamEl = null;
 let currentStreamText = '';
 let rawEvents = [];
+let favPlaces = [];
+
+// ── Favorite places ───────────────────────────────────────────────────────────
+function addFavPlace() {
+  const inp = document.getElementById('fav-input');
+  const val = inp.value.trim();
+  if (!val || favPlaces.includes(val)) { inp.value = ''; return; }
+  favPlaces.push(val);
+  inp.value = '';
+  renderFavPlaces();
+}
+
+function removeFavPlace(i) {
+  favPlaces.splice(i, 1);
+  renderFavPlaces();
+}
+
+function renderFavPlaces() {
+  const list = document.getElementById('fav-list');
+  list.innerHTML = favPlaces.map((p, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;background:#1e2233;border:1px solid #2d3148;border-radius:5px;padding:4px 8px;font-size:12px;color:#c4cce0;">
+      <span>${escHtml(p)}</span>
+      <button onclick="removeFavPlace(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 2px;opacity:.7;" title="Remove">×</button>
+    </div>`).join('');
+}
 
 function base() { return document.getElementById('server-url').value.replace(/\/$/, ''); }
 
@@ -334,6 +350,7 @@ async function sendRequest() {
 
   for (const f of document.getElementById('audio-files').files) fd.append('audios', f);
   for (const f of document.getElementById('image-files').files) fd.append('images', f);
+  for (const p of favPlaces) fd.append('favorite_places', p);
 
   // Show user message
   appendUserMsg(text || '[audio/image only]');
@@ -386,14 +403,6 @@ function handleEvent(ev) {
   if (ev.type === 'text') {
     currentStreamText += ev.text;
     currentStreamEl.textContent = currentStreamText;
-  } else if (ev.type === 'action') {
-    finaliseStream();
-    const div = document.createElement('div');
-    div.className = 'msg';
-    div.innerHTML = `<div class="msg-header"><span class="role system">ACTION</span></div>
-      <div class="msg-body action">Type: ${ev.action_type}\n${ev.payload || ''}</div>`;
-    document.getElementById('tab-response').appendChild(div);
-    scrollResponse();
   } else if (ev.type === 'error') {
     finaliseStream();
     appendErrorMsg(`${ev.code}: ${ev.message}`);

@@ -54,6 +54,7 @@ async def chat_sse(
     text: Optional[str] = Form(None),
     audios: List[UploadFile] = File(default=[]),
     images: List[UploadFile] = File(default=[]),
+    favorite_places: List[str] = Form(default=[]),
 ):
     from app.core.router import handle
     from app.models.chat import ChatRequest
@@ -65,6 +66,7 @@ async def chat_sse(
         text=text or None,
         audios=[await f.read() for f in audios],
         images=[await f.read() for f in images],
+        favorite_places=favorite_places,
     )
 
     async def event_stream():
@@ -74,12 +76,6 @@ async def chat_sse(
                     "type": "text",
                     "text": response.text_chunk.text,
                     "is_final": response.text_chunk.is_final,
-                }
-            elif response.HasField("action"):
-                data = {
-                    "type": "action",
-                    "action_type": response.action.type,
-                    "payload": response.action.payload,
                 }
             elif response.HasField("error"):
                 data = {
