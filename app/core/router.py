@@ -9,6 +9,7 @@ enabling multi-turn conversations (e.g. ask for missing pickup/destination).
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import AsyncGenerator
 
@@ -61,6 +62,9 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
     """
     Main entry point. Yields gRPC ChatResponse protobuf messages.
     """
+    import uuid
+    req_id = uuid.uuid4().hex[:8]
+    logger.info("handle() start session=%s req_id=%s", request.session_id, req_id)
     lang = request.language
 
     # 1. Emit per-type status chunks in the client's language
@@ -94,9 +98,10 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
         history=history,
         language=request.language,
         favorite_places=request.favorite_places,
+        tariffs=[t.model_dump() for t in request.tariffs] if request.tariffs else None,
     )
 
-    # 5. Stream LLM response — text chunks arrive word-by-word, route comes at the end
+    # 5. Stream LLM response — text chunks arrive word-by-word, order comes at the end
     full_text = ""
     async for event in llm_client.stream_response(messages):
         if event["type"] == "text_chunk":
@@ -104,11 +109,18 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
             yield stream_handler.make_text_chunk(event["content"], is_final=False)
 
         elif event["type"] == "done":
-            route_str = event.get("route")
-            if route_str:
-                yield stream_handler.make_text_chunk(route_str, is_final=True)
-            else:
-                yield stream_handler.make_text_chunk("", is_final=True)
+            order_str = event.get("route")  # raw JSON string after <<<ORDER>>>
+            yield stream_handler.make_text_chunk("", is_final=True)
+            if order_str:
+                try:
+                    order = json.loads(order_str)
+                    if isinstance(order, dict):
+                        yield stream_handler.make_order_draft(order)
+                    elif isinstance(order, list):
+                        # backward-compat: old <<<ROUTE>>> plain array
+                        yield stream_handler.make_order_draft({"route": order})
+                except (json.JSONDecodeError, ValueError):
+                    logger.warning("Could not parse order JSON: %s", order_str)
             break
 
         elif event["type"] == "error":
@@ -171,8 +183,11 @@ async def _resolve_input(request: ChatRequest) -> tuple[str | list, str]:
             })
 
         for idx, image_bytes in enumerate(request.images):
-            label = _image_label(idx, len(request.images))
-            content.append({"type": "text", "text": label})
+            # Only add positional labels when the user hasn't described the image roles
+            # in their own text; a label that contradicts user intent confuses the LLM.
+            if not history_text or len(request.images) > 1:
+                label = _image_label(idx, len(request.images))
+                content.append({"type": "text", "text": label})
             content.append({"type": "image_url", "image_url": {"url": to_base64_url(image_bytes)}})
 
         if not history_text:

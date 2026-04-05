@@ -225,8 +225,8 @@ _PROVIDERS = _build_provider_configs()
 # 5.  Streaming delimiter
 # ---------------------------------------------------------------------------
 
-_ROUTE_DELIMITER = "<<<ROUTE>>>"
-_ROUTE_DELIMITER_LEN = len(_ROUTE_DELIMITER)
+_ORDER_DELIMITER = "<<<ORDER>>>"
+_ORDER_DELIMITER_LEN = len(_ORDER_DELIMITER)
 
 
 # ---------------------------------------------------------------------------
@@ -393,16 +393,16 @@ async def _call_model_stream(
             route_buffer += content
         else:
             text_buffer += content
-            idx = text_buffer.find(_ROUTE_DELIMITER)
+            idx = text_buffer.find(_ORDER_DELIMITER)
             if idx != -1:
                 delimiter_found = True
                 before = text_buffer[:idx].rstrip("\n").rstrip()
                 if before:
                     yield {"type": "text_chunk", "content": before}
-                route_buffer = text_buffer[idx + _ROUTE_DELIMITER_LEN:]
+                route_buffer = text_buffer[idx + _ORDER_DELIMITER_LEN:]
             else:
                 # Yield text that's safely past a possible split delimiter
-                safe_len = max(0, len(text_buffer) - _ROUTE_DELIMITER_LEN + 1)
+                safe_len = max(0, len(text_buffer) - _ORDER_DELIMITER_LEN + 1)
                 if safe_len > 0:
                     yield {"type": "text_chunk", "content": text_buffer[:safe_len]}
                     text_buffer = text_buffer[safe_len:]

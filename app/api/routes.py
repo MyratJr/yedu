@@ -55,9 +55,16 @@ async def chat_sse(
     audios: List[UploadFile] = File(default=[]),
     images: List[UploadFile] = File(default=[]),
     favorite_places: List[str] = Form(default=[]),
+    tariffs_json: str = Form(default="[]"),
 ):
     from app.core.router import handle
-    from app.models.chat import ChatRequest
+    from app.models.chat import ChatRequest, Tariff
+
+    try:
+        raw_tariffs = json.loads(tariffs_json) if tariffs_json.strip() else []
+        tariffs = [Tariff(**t) for t in raw_tariffs if isinstance(t, dict)]
+    except (json.JSONDecodeError, ValueError, TypeError):
+        tariffs = []
 
     req = ChatRequest(
         session_id=session_id,
@@ -67,6 +74,7 @@ async def chat_sse(
         audios=[await f.read() for f in audios],
         images=[await f.read() for f in images],
         favorite_places=favorite_places,
+        tariffs=tariffs,
     )
 
     async def event_stream():
@@ -74,18 +82,15 @@ async def chat_sse(
             try:
                 if response.HasField("text_chunk"):
                     chunk = response.text_chunk
-                    chunk_type = "text"
-                    if chunk.is_final:
-                        try:
-                            parsed = json.loads(chunk.text)
-                            if isinstance(parsed, list):
-                                chunk_type = "list"
-                        except (json.JSONDecodeError, ValueError):
-                            pass
+                    data = {"type": "text", "text": chunk.text, "is_final": chunk.is_final}
+                elif response.HasField("order_draft"):
+                    od = response.order_draft
                     data = {
-                        "type": chunk_type,
-                        "text": chunk.text,
-                        "is_final": chunk.is_final,
+                        "type": "order_draft",
+                        "route": list(od.route),
+                        "scheduled_datetime": od.scheduled_datetime or None,
+                        "tariff_id": od.tariff_id or None,
+                        "passenger_count": od.passenger_count or None,
                     }
                 elif response.HasField("error"):
                     data = {

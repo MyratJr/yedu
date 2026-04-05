@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yedu AI — gRPC Test UI</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+  header { background: #1a1d2e; border-bottom: 1px solid #2d3148; padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+  header h1 { font-size: 16px; font-weight: 600; color: #a78bfa; }
+  .server-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .server-row label { font-size: 12px; color: #94a3b8; }
+  .server-row input { background: #0f1117; border: 1px solid #2d3148; border-radius: 6px; color: #e2e8f0; padding: 5px 10px; font-size: 13px; width: 260px; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
+  #status-dot.ok { background: #22c55e; }
+  #status-dot.err { background: #ef4444; }
+
+  main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Left panel ── */
+  .left { width: 300px; flex-shrink: 0; background: #13151f; border-right: 1px solid #2d3148; display: flex; flex-direction: column; overflow: hidden; }
+  .panel-title { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .06em; padding: 12px 16px 6px; }
+
+  /* Quick tests */
+  .quick-tests { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .quick-btn { background: #1e2233; border: 1px solid #2d3148; border-radius: 6px; color: #c4cce0; font-size: 12px; padding: 7px 10px; text-align: left; cursor: pointer; transition: background .15s; }
+  .quick-btn:hover { background: #252a40; border-color: #4c4fac; }
+  .quick-btn .tag { font-size: 10px; color: #64748b; margin-left: 4px; }
+
+  /* Form */
+  .form-area { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .field label { display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
+    color: #e2e8f0; padding: 7px 10px; font-size: 13px; outline: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: #4c4fac; }
+  .field textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+  .field select option { background: #1a1d2e; }
+
+  .file-label { display: flex; align-items: center; gap: 6px; background: #0f1117; border: 1px dashed #2d3148; border-radius: 6px; padding: 7px 10px; cursor: pointer; font-size: 12px; color: #64748b; transition: border-color .15s; }
+  .file-label:hover { border-color: #4c4fac; color: #a78bfa; }
+  .file-label input { display: none; }
+  .file-count { font-size: 11px; color: #a78bfa; margin-top: 3px; }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .send-btn { background: #4c4fac; border: none; border-radius: 8px; color: #fff; font-size: 14px; font-weight: 600; padding: 10px; cursor: pointer; transition: background .15s; width: 100%; }
+  .send-btn:hover { background: #5c5fbc; }
+  .send-btn:disabled { background: #2d3148; color: #64748b; cursor: not-allowed; }
+
+  /* Sessions */
+  .sessions-area { border-top: 1px solid #2d3148; padding: 10px 12px; max-height: 160px; overflow-y: auto; }
+  .session-item { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; color: #94a3b8; }
+  .session-item:hover { background: #1e2233; }
+  .session-item.active { background: #252a40; color: #a78bfa; }
+  .session-del { color: #ef4444; background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 2px; opacity: .6; }
+  .session-del:hover { opacity: 1; }
+  .no-sessions { font-size: 12px; color: #475569; padding: 6px 0; }
+
+  /* ── Right panel ── */
+  .right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .tab-bar { display: flex; gap: 2px; padding: 10px 16px 0; background: #13151f; border-bottom: 1px solid #2d3148; flex-shrink: 0; }
+  .tab { font-size: 12px; padding: 6px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; cursor: pointer; color: #64748b; background: transparent; }
+  .tab.active { background: #0f1117; border-color: #2d3148; color: #e2e8f0; }
+
+  .output { flex: 1; overflow-y: auto; padding: 16px; font-size: 13px; line-height: 1.6; }
+  .output.hidden { display: none; }
+
+  .msg { margin-bottom: 14px; }
+  .msg-header { font-size: 11px; color: #475569; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .msg-header .role { font-weight: 600; }
+  .msg-header .role.user { color: #60a5fa; }
+  .msg-header .role.assistant { color: #34d399; }
+  .msg-header .role.system { color: #f59e0b; }
+  .msg-body { background: #1a1d2e; border-radius: 8px; padding: 10px 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg-body.streaming { border-left: 2px solid #4c4fac; }
+  .msg-body.error { background: #2d1515; border-left: 2px solid #ef4444; color: #fca5a5; }
+  .msg-body.action { background: #1a2d1a; border-left: 2px solid #22c55e; color: #86efac; }
+  .msg-body.order { background: #1a1d2e; border-left: 2px solid #f59e0b; }
+
+  .order-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+  .order-table td { padding: 4px 8px; border-bottom: 1px solid #2d3148; }
+  .order-table td:first-child { color: #64748b; width: 120px; }
+
+  /* History tab */
+  .history-msg { display: flex; gap: 10px; margin-bottom: 10px; }
+  .history-msg .bubble { max-width: 70%; background: #1e2233; border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
+  .history-msg.user { justify-content: flex-end; }
+  .history-msg.user .bubble { background: #252a50; color: #c4cce0; }
+  .history-msg.assistant .bubble { background: #1a1d2e; color: #e2e8f0; }
+
+  /* Raw tab */
+  .raw-entry { background: #0d0f1a; border: 1px solid #1e2233; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 12px; color: #94a3b8; }
+  .raw-entry .raw-time { color: #475569; margin-bottom: 4px; }
+
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #334155; gap: 8px; }
+  .empty-state svg { width: 48px; height: 48px; opacity: .4; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Yedu AI — Test Client</h1>
+  <div class="server-row">
+    <label>API</label>
+    <input id="server-url" value="http://172.16.18.115:8000" placeholder="http://host:8100">
+    <div id="status-dot" title="Click to ping"></div>
+  </div>
+  <button onclick="pingServer()" style="background:#1e2233;border:1px solid #2d3148;border-radius:6px;color:#94a3b8;padding:5px 12px;font-size:12px;cursor:pointer;">Ping</button>
+</header>
+
+<main>
+  <!-- ── Left panel ── -->
+  <div class="left">
+
+    <div class="panel-title" style="margin-top:6px;">Request</div>
+    <div class="form-area">
+      <div class="row2">
+        <div class="field">
+          <label>Session ID</label>
+          <input id="session-id" value="test-sess-1" placeholder="test-sess-1">
+        </div>
+        <div class="field">
+          <label>User ID</label>
+          <input id="user-id" value="test-user-1" placeholder="test-user-1">
+        </div>
+      </div>
+      <div class="field">
+        <label>Language</label>
+        <select id="language">
+          <option value="en">English (en)</option>
+          <option value="ar">Arabic (ar)</option>
+          <option value="tk">Turkmen (tk)</option>
+          <option value="ru">Russian (ru)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Favorite places <span style="color:#475569;font-size:10px;">(comma-separated)</span></label>
+        <input id="favorite-places" placeholder='e.g. Home, Work, Airport'>
+      </div>
+      <div class="field">
+        <label>Tariffs JSON <span style="color:#475569;font-size:10px;">(optional)</span></label>
+        <textarea id="tariffs-json" style="min-height:48px;font-family:monospace;font-size:11px;" placeholder='[{"id":"economy","name":"Economy"},{"id":"comfort","name":"Comfort"}]'></textarea>
+      </div>
+      <div class="field">
+        <label>Text input</label>
+        <textarea id="text-input" placeholder="e.g. Take me to Burj Khalifa"></textarea>
+      </div>
+      <div class="field">
+        <label>Audio files (WAV)</label>
+        <label class="file-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+          Choose audio files…
+          <input type="file" id="audio-files" multiple accept=".wav,.mp3,.ogg,.m4a" onchange="updateFileCount(this,'audio-count')">
+        </label>
+        <div class="file-count" id="audio-count"></div>
+      </div>
+      <div class="field">
+        <label>Image files</label>
+        <label class="file-label">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          Choose image files…
+          <input type="file" id="image-files" multiple accept="image/*" onchange="updateFileCount(this,'image-count')">
+        </label>
+        <div class="file-count" id="image-count"></div>
+      </div>
+      <button class="send-btn" id="send-btn" onclick="sendRequest()">Send Request</button>
+      <button onclick="newSession()" style="background:#1e2233;border:1px solid #2d3148;border-radius:8px;color:#94a3b8;font-size:12px;padding:8px;cursor:pointer;width:100%;">New Session</button>
+    </div>
+
+    <div class="panel-title">Sessions</div>
+    <div class="sessions-area" id="sessions-list">
+      <div class="no-sessions">No sessions yet</div>
+    </div>
+  </div>
+
+  <!-- ── Right panel ── -->
+  <div class="right">
+    <div class="tab-bar">
+      <button class="tab active" onclick="showTab('response')">Response</button>
+      <button class="tab" onclick="showTab('history')">Conversation</button>
+      <button class="tab" onclick="showTab('raw')">Raw Events</button>
+    </div>
+
+    <div class="output" id="tab-response">
+      <div class="empty-state" id="empty-response">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-3 3-3-3z"/></svg>
+        <span>Send a request to see the response</span>
+      </div>
+    </div>
+
+    <div class="output hidden" id="tab-history">
+      <div class="empty-state" id="empty-history">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 6v6l4 2M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg>
+        <span>Conversation history will appear here</span>
+      </div>
+    </div>
+
+    <div class="output hidden" id="tab-raw">
+      <div class="empty-state" id="empty-raw">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
+        <span>Raw SSE events will appear here</span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let activeTab = 'response';
+let currentStreamEl = null;
+let currentStreamText = '';
+let rawEvents = [];
+
+function base() { return document.getElementById('server-url').value.replace(/\/$/, ''); }
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  activeTab = name;
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', ['response','history','raw'][i] === name);
+  });
+  ['response','history','raw'].forEach(n => {
+    document.getElementById('tab-'+n).classList.toggle('hidden', n !== name);
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function updateFileCount(input, countId) {
+  const el = document.getElementById(countId);
+  el.textContent = input.files.length ? `${input.files.length} file(s) selected` : '';
+}
+
+function newSession() {
+  const id = 'sess-' + Math.random().toString(36).slice(2,10);
+  document.getElementById('session-id').value = id;
+}
+
+function setSessionId(id) {
+  document.getElementById('session-id').value = id;
+  document.querySelectorAll('.session-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.id === id));
+  loadHistory(id);
+}
+
+// ── Ping ─────────────────────────────────────────────────────────────────────
+async function pingServer() {
+  const dot = document.getElementById('status-dot');
+  dot.className = '';
+  try {
+    const r = await fetch(base() + '/health', { signal: AbortSignal.timeout(3000) });
+    dot.className = r.ok ? 'ok' : 'err';
+  } catch { dot.className = 'err'; }
+}
+
+// ── Quick tests ───────────────────────────────────────────────────────────────
+const QUICK_PRESETS = {
+  text:        { text: 'Take me to Burj Khalifa' },
+  multi:       { text: 'Pick me up from Burj Khalifa, stop at City Walk, then drop me at Palm Jumeirah' },
+  audio:       { _needAudio: true },
+  multi_audio: { _needMultiAudio: true },
+  image:       { _needImage: true },
+  multi_image: { _needMultiImage: true },
+  text_audio:  { text: 'Then my destination is Yyltyz hotel', _needAudio: true },
+  text_image:  { text: 'make destination this', _needImage: true },
+  all:         { text: 'My pickup is in voice, stops in image, add one more stop for Berkarar', _needAudio: true, _needImage: true },
+  scheduled:   {
+    text: 'Book a ride to Dubai Mall tomorrow at 3pm',
+    _allowScheduling: true,
+  },
+  with_tariff: {
+    text: 'I want an economy ride to Burj Khalifa',
+    _tariffs: '[{"id":"economy","name":"Economy"},{"id":"comfort","name":"Comfort"},{"id":"business","name":"Business"}]',
+  },
+  full_order:  {
+    text: 'Book an economy ride to Mall of Emirates at 3pm for 2 passengers, avoid traffic',
+    _allowScheduling: true,
+    _tariffs: '[{"id":"economy","name":"Economy"},{"id":"comfort","name":"Comfort"},{"id":"business","name":"Business"}]',
+  },
+};
+
+function quickTest(key) {
+  const preset = QUICK_PRESETS[key];
+  document.getElementById('text-input').value = preset.text || '';
+  if (preset._tariffs !== undefined)
+    document.getElementById('tariffs-json').value = preset._tariffs;
+  if (preset._needAudio || preset._needMultiAudio || preset._needImage || preset._needMultiImage) {
+    appendSystemMsg(`Preset "${key}": attach the required file(s) then click Send.`);
+  }
+  showTab('response');
+}
+
+const CONV_PRESETS = {
+  conv_pickup: [
+    { text: 'pick me up from my location' },
+    { text: 'Yyldyz Hotel' },
+  ],
+  conv_dest: [
+    { text: 'I want to go to Berkarar Mall' },
+    { text: 'my current location' },
+  ],
+};
+
+async function quickConv(key) {
+  const turns = CONV_PRESETS[key];
+  const sessId = 'conv-' + Math.random().toString(36).slice(2,10);
+  document.getElementById('session-id').value = sessId;
+  appendSystemMsg(`Starting conversation "${key}" (session: ${sessId})`);
+  showTab('response');
+
+  for (let i = 0; i < turns.length; i++) {
+    appendSystemMsg(`Turn ${i+1}: "${turns[i].text}"`);
+    document.getElementById('text-input').value = turns[i].text;
+    await sendRequest();
+    // wait for stream to finish before next turn
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
+
+// ── Send request ──────────────────────────────────────────────────────────────
+async function sendRequest() {
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.textContent = 'Streaming…';
+
+  clearEmpty('response');
+  clearEmpty('raw');
+
+  const fd = new FormData();
+  fd.append('session_id', document.getElementById('session-id').value || 'test-sess-1');
+  fd.append('user_id',    document.getElementById('user-id').value    || 'test-user-1');
+  fd.append('language',   document.getElementById('language').value);
+  const text = document.getElementById('text-input').value.trim();
+  if (text) fd.append('text', text);
+
+  // optional features
+  const favRaw = document.getElementById('favorite-places').value;
+  for (const p of favRaw.split(',').map(s => s.trim()).filter(Boolean))
+    fd.append('favorite_places', p);
+  fd.append('allow_scheduling', '1');
+  fd.append('tariffs_json', document.getElementById('tariffs-json').value.trim() || '[]');
+
+  for (const f of document.getElementById('audio-files').files) fd.append('audios', f);
+  for (const f of document.getElementById('image-files').files) fd.append('images', f);
+
+  // Show user message
+  appendUserMsg(text || '[audio/image only]');
+
+  // Prepare streaming assistant message
+  currentStreamText = '';
+  currentStreamEl = appendAssistantStreamMsg();
+
+  try {
+    const res = await fetch(base() + '/chat', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.text();
+      finaliseStream();
+      appendErrorMsg(`HTTP ${res.status}: ${err}`);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6);
+        try {
+          const ev = JSON.parse(raw);
+          handleEvent(ev);
+          logRaw(ev);
+        } catch {}
+      }
+    }
+  } catch (e) {
+    appendErrorMsg('Network error: ' + e.message);
+  } finally {
+    finaliseStream();
+    btn.disabled = false;
+    btn.textContent = 'Send Request';
+    await refreshSessions();
+    await loadHistory(document.getElementById('session-id').value);
+  }
+}
+
+function handleEvent(ev) {
+  if (ev.type === 'text') {
+    currentStreamText += ev.text;
+    currentStreamEl.textContent = currentStreamText;
+  } else if (ev.type === 'order_draft') {
+    finaliseStream();
+    appendOrderDraft(ev);
+  } else if (ev.type === 'action') {
+    finaliseStream();
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.innerHTML = `<div class="msg-header"><span class="role system">ACTION</span></div>
+      <div class="msg-body action">Type: ${ev.action_type}\n${ev.payload || ''}</div>`;
+    document.getElementById('tab-response').appendChild(div);
+    scrollResponse();
+  } else if (ev.type === 'error') {
+    finaliseStream();
+    appendErrorMsg(`${ev.code}: ${ev.message}`);
+  }
+}
+
+function appendOrderDraft(order) {
+  const rows = [
+    ['Route',     (order.route || []).join(' → ')],
+    ['Scheduled', order.scheduled_datetime || 'ASAP'],
+    order.tariff_id      ? ['Tariff',     order.tariff_id]                  : null,
+    order.passenger_count ? ['Passengers', order.passenger_count]           : null,
+  ].filter(Boolean);
+
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `
+    <div class="msg-header"><span class="role system">Order Draft</span><span>${new Date().toLocaleTimeString()}</span></div>
+    <div class="msg-body order">
+      <table class="order-table">
+        ${rows.map(([k, v]) => `<tr><td>${k}</td><td>${escHtml(String(v))}</td></tr>`).join('')}
+      </table>
+    </div>`;
+  document.getElementById('tab-response').appendChild(div);
+  scrollResponse();
+}
+
+function logRaw(ev) {
+  clearEmpty('raw');
+  const entry = document.createElement('div');
+  entry.className = 'raw-entry';
+  entry.innerHTML = `<div class="raw-time">${new Date().toISOString()}</div>${JSON.stringify(ev, null, 2)}`;
+  document.getElementById('tab-raw').appendChild(entry);
+}
+
+// ── DOM helpers ───────────────────────────────────────────────────────────────
+function clearEmpty(tab) {
+  const el = document.getElementById('empty-' + tab);
+  if (el) el.remove();
+}
+
+function scrollResponse() {
+  const el = document.getElementById('tab-response');
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendUserMsg(text) {
+  clearEmpty('response');
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `<div class="msg-header"><span class="role user">You</span><span>${new Date().toLocaleTimeString()}</span></div>
+    <div class="msg-body">${escHtml(text)}</div>`;
+  document.getElementById('tab-response').appendChild(div);
+  scrollResponse();
+}
+
+function appendAssistantStreamMsg() {
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `<div class="msg-header"><span class="role assistant">Yedu AI</span><span id="stream-time">${new Date().toLocaleTimeString()}</span></div>
+    <div class="msg-body streaming" id="stream-body"></div>`;
+  document.getElementById('tab-response').appendChild(div);
+  scrollResponse();
+  return document.getElementById('stream-body');
+}
+
+function finaliseStream() {
+  if (!currentStreamEl) return;
+  currentStreamEl.classList.remove('streaming');
+  currentStreamEl.id = '';
+  currentStreamEl = null;
+}
+
+function appendErrorMsg(text) {
+  clearEmpty('response');
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `<div class="msg-header"><span class="role system">Error</span></div>
+    <div class="msg-body error">${escHtml(text)}</div>`;
+  document.getElementById('tab-response').appendChild(div);
+  scrollResponse();
+}
+
+function appendSystemMsg(text) {
+  clearEmpty('response');
+  const div = document.createElement('div');
+  div.className = 'msg';
+  div.innerHTML = `<div class="msg-header"><span class="role system">System</span></div>
+    <div class="msg-body" style="color:#64748b;font-size:12px;">${escHtml(text)}</div>`;
+  document.getElementById('tab-response').appendChild(div);
+  scrollResponse();
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+async function refreshSessions() {
+  try {
+    const r = await fetch(base() + '/sessions');
+    if (!r.ok) return;
+    const data = await r.json();
+    const list = document.getElementById('sessions-list');
+    const current = document.getElementById('session-id').value;
+    if (!data.sessions.length) {
+      list.innerHTML = '<div class="no-sessions">No sessions yet</div>';
+      return;
+    }
+    list.innerHTML = data.sessions.map(id => `
+      <div class="session-item ${id===current?'active':''}" data-id="${id}" onclick="setSessionId('${id}')">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${id}</span>
+        <button class="session-del" onclick="event.stopPropagation();deleteSession('${id}')" title="Clear">×</button>
+      </div>`).join('');
+  } catch {}
+}
+
+async function deleteSession(id) {
+  try {
+    await fetch(base() + '/sessions/' + encodeURIComponent(id), { method: 'DELETE' });
+    await refreshSessions();
+    if (document.getElementById('session-id').value === id) {
+      document.getElementById('tab-history').innerHTML = '<div class="empty-state"><span>History cleared</span></div>';
+    }
+  } catch {}
+}
+
+async function loadHistory(id) {
+  const tab = document.getElementById('tab-history');
+  try {
+    const r = await fetch(base() + '/sessions/' + encodeURIComponent(id));
+    if (!r.ok) { tab.innerHTML = '<div class="empty-state"><span>No history for this session</span></div>'; return; }
+    const data = await r.json();
+    const el = document.getElementById('empty-history');
+    if (el) el.remove();
+    tab.innerHTML = data.messages.map(m => `
+      <div class="history-msg ${m.role}">
+        <div class="bubble">${escHtml(m.content)}</div>
+      </div>`).join('');
+    tab.scrollTop = tab.scrollHeight;
+  } catch {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+pingServer();
+refreshSessions();
+</script>
+</body>
+</html>

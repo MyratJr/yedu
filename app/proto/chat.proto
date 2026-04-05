@@ -4,63 +4,48 @@ package chat;
 
 option go_package = "./chatpb";
 
-// ── Service ───────────────────────────────────────────────────────────────────
-//
-// Bidirectional streaming:
-//   Client sends one ChatRequest per user turn (text / audio / images).
-//   Server streams back one or more ChatResponse chunks per turn.
-//
-// Multi-turn flow:
-//   Turn 1 — user sends dest only (no pickup) → pickup auto-set to "user's location", returns route immediately
-//   Turn 1 — user sends pickup only           → server asks "Where would you like to go?"
-//   Turn 2 — user answers with destination    → server returns final route list
-//   Any turn — user sends both               → server returns final route list immediately
-//
-// Favorite places:
-//   Go backend sends the user's saved place names in favorite_places.
-//   When the user refers to one (by name or similar meaning), the AI resolves
-//   it to the exact saved name so the Go backend can look up its coordinates.
-//
-// Final route is returned as a TextChunk containing a JSON array, e.g.:
-//   ["user's location", "Stop A", "Destination B"]
-//   ["Home", "Work"]   ← when favorite place names are used
-
 service ChatService {
   rpc Chat(stream ChatRequest) returns (stream ChatResponse);
 }
 
-// ── Request ───────────────────────────────────────────────────────────────────
-
-message ChatRequest {
-  string session_id            = 1;  // links turns together; new UUID per booking flow
-  string user_id               = 2;  // authenticated user ID from Go backend
-  string text_input            = 3;  // plain text (optional)
-  repeated bytes audio_inputs  = 4;  // one or more audio clips (transcribed server-side)
-  repeated bytes image_inputs  = 5;  // one or more images — order: pickup → stops → destination
-  string language              = 6;  // "en" | "ar"
-  repeated string favorite_places = 7;  // user's saved place names, e.g. ["Home", "Work"]
+message Tariff {
+  string id          = 1;
+  string name        = 2;
+  string description = 3;
 }
 
-// ── Response ──────────────────────────────────────────────────────────────────
+message ChatRequest {
+  string session_id               = 1;
+  string user_id                  = 2;
+  string text_input               = 3;
+  repeated bytes audio_inputs     = 4;
+  repeated bytes image_inputs     = 5;
+  string language                 = 6;
+  repeated string favorite_places = 7;
+  repeated Tariff tariffs         = 8;
+}
 
 message ChatResponse {
   oneof payload {
-    TextChunk text_chunk = 1;  // streaming text: a clarifying question or the final route list
-    ErrorInfo error      = 2;  // error details
+    TextChunk  text_chunk  = 1;
+    ErrorInfo  error       = 2;
+    OrderDraft order_draft = 3;
   }
 }
 
-// Streaming text chunk from the LLM.
-// Collect all chunks until is_final = true, then parse the assembled text.
-// If text is a JSON array  → it's the final route: ["pickup", ..."destination"]
-// If text is a question    → display it to the user and wait for their reply
 message TextChunk {
   string text     = 1;
   bool   is_final = 2;
 }
 
-// Error detail returned when the server cannot process the request.
+message OrderDraft {
+  repeated string route     = 1;
+  string scheduled_datetime = 2;
+  string tariff_id          = 4;
+  int32  passenger_count    = 5;
+}
+
 message ErrorInfo {
-  string code    = 1;  // e.g. "EMPTY_INPUT", "LLM_ERROR", "INTERNAL_ERROR"
+  string code    = 1;
   string message = 2;
 }
