@@ -99,6 +99,7 @@ async def handle(request: ChatRequest) -> AsyncGenerator[dict, None]:
         language=request.language,
         favorite_places=request.favorite_places,
         tariffs=[t.model_dump() for t in request.tariffs] if request.tariffs else None,
+        timezone_str=request.timezone,
     )
 
     # 5. Stream LLM response — text chunks arrive word-by-word, order comes at the end

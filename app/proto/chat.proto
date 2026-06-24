@@ -23,6 +23,7 @@ message ChatRequest {
   string language                 = 6;
   repeated string favorite_places = 7;
   repeated Tariff tariffs         = 8;
+  string timezone                 = 9;
 }
 
 message ChatResponse {
@@ -41,8 +42,8 @@ message TextChunk {
 message OrderDraft {
   repeated string route     = 1;
   string scheduled_datetime = 2;
-  string tariff_id          = 4;
-  int32  passenger_count    = 5;
+  string tariff_id          = 3;
+  int32  passenger_count    = 4;
 }
 
 message ErrorInfo {

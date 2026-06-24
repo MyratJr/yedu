@@ -35,6 +35,8 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
                 images=list(proto_req.image_inputs),
                 language=proto_req.language or "en",
                 favorite_places=list(proto_req.favorite_places),
+                tariffs=list(proto_req.tariffs),
+                timezone=proto_req.timezone or "UTC",
             )
 
             logger.info(

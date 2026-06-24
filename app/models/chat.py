@@ -12,12 +12,13 @@ class Tariff(BaseModel):
 class ChatRequest(BaseModel):
     session_id:       str
     user_id:          str
-    text:             Optional[str]    = None
-    audios:           List[bytes]      = []
-    images:           List[bytes]      = []
-    language:         str              = "en"
-    favorite_places:  List[str]        = []  # e.g. ["Home", "Work", "Mom's House"]
-    tariffs:          List[Tariff]     = []  # available tariff options from Go backend
+    text:             Optional[str]  = None
+    audios:           List[bytes]    = []
+    images:           List[bytes]    = []
+    language:         str            = "en"
+    favorite_places:  List[str]      = []  
+    tariffs:          List[Tariff]   = []  
+    timezone:         str            = "UTC"
 
 
 class ChatResponse(BaseModel):

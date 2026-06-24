@@ -56,6 +56,7 @@ async def chat_sse(
     images: List[UploadFile] = File(default=[]),
     favorite_places: List[str] = Form(default=[]),
     tariffs_json: str = Form(default="[]"),
+    timezone: str = Form(default="UTC"),
 ):
     from app.core.router import handle
     from app.models.chat import ChatRequest, Tariff
@@ -75,6 +76,7 @@ async def chat_sse(
         images=[await f.read() for f in images],
         favorite_places=favorite_places,
         tariffs=tariffs,
+        timezone=timezone,
     )
 
     async def event_stream():
@@ -142,3 +144,4 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found or empty")
     await session_manager.clear(session_id)
     return {"cleared": session_id}
+    

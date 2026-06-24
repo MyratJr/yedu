@@ -1,5 +1,13 @@
 import json
+import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+import re
+from datetime import datetime, timezone, timedelta
+
+
+logger = logging.getLogger(__name__)
+
 
 _BASE_PROMPT = """You are Yedu, a taxi booking AI.
 
@@ -27,16 +35,47 @@ Tariff:
 - Not mentioned → null"""
 
 
+def _parse_timezone(tz_str: str) -> ZoneInfo | timezone:
+    try:
+        return ZoneInfo(tz_str)
+    except ZoneInfoNotFoundError:
+        pass
+
+    match = re.match(r'^(?:UTC|GMT)([+-])(\d{1,2})(?::(\d{2}))?$', tz_str.strip(), re.IGNORECASE)
+    if match:
+        sign, hours, minutes = match.groups()
+        hours, minutes = int(hours), int(minutes or 0)
+
+        if minutes == 0:
+            etc_sign = '-' if sign == '+' else '+'
+            try:
+                return ZoneInfo(f"Etc/GMT{etc_sign}{hours}")
+            except ZoneInfoNotFoundError:
+                pass
+
+        offset = timedelta(hours=hours, minutes=minutes)
+        if sign == '-':
+            offset = -offset
+        return timezone(offset)
+
+    logger.warning("Unknown timezone %r, falling back to UTC", tz_str)
+    return timezone.utc
+
+
 def build_messages(
     user_content: str | list,
     history: list[dict],
     language: str = "en",
     favorite_places: list[str] | None = None,
     tariffs: list[dict] | None = None,
+    timezone_str: str = "UTC",
 ) -> list[dict]:
 
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S UTC")
-    parts = [_BASE_PROMPT, f"\n\nCurrent datetime: {now_str}"]
+    tz = _parse_timezone(timezone_str)
+    
+    now = datetime.now(tz)
+    current_time_info = f"Current date and time: {now.isoformat()}"
+    parts = [_BASE_PROMPT, "\n\n", current_time_info]
 
     has_tariffs = bool(tariffs)
 
